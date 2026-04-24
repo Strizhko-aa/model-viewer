@@ -13,27 +13,27 @@
  * limitations under the License.
  */
 
-import {property} from 'lit/decorators.js';
-import {USDZExporter} from 'three/examples/jsm/exporters/USDZExporter.js';
+import { property } from 'lit/decorators.js';
+import { USDZExporter } from 'three/examples/jsm/exporters/USDZExporter.js';
 
-import {IS_AR_QUICKLOOK_CANDIDATE, IS_SCENEVIEWER_CANDIDATE, IS_WEBXR_AR_CANDIDATE} from '../constants.js';
-import ModelViewerElementBase, {$needsRender, $progressTracker, $renderer, $scene, $shouldAttemptPreload, $updateSource} from '../model-viewer-base.js';
-import {enumerationDeserializer} from '../styles/deserializers.js';
-import {ARStatus, ARTracking} from '../three-components/ARRenderer.js';
-import {Constructor, waitForEvent} from '../utilities.js';
+import { IS_AR_QUICKLOOK_CANDIDATE, IS_SCENEVIEWER_CANDIDATE, IS_WEBXR_AR_CANDIDATE } from '../constants.js';
+import ModelViewerElementBase, { $needsRender, $progressTracker, $renderer, $scene, $shouldAttemptPreload, $updateSource } from '../model-viewer-base.js';
+import { enumerationDeserializer } from '../styles/deserializers.js';
+import { ARStatus, ARTracking } from '../three-components/ARRenderer.js';
+import { Constructor, waitForEvent } from '../utilities.js';
 
 let isWebXRBlocked = false;
 let isSceneViewerBlocked = false;
 const noArViewerSigil = '#model-viewer-no-ar-fallback';
 
-export type ARMode = 'quick-look'|'scene-viewer'|'webxr'|'none';
+export type ARMode = 'quick-look' | 'scene-viewer' | 'webxr' | 'none';
 
 const deserializeARModes = enumerationDeserializer<ARMode>(
-    ['quick-look', 'scene-viewer', 'webxr', 'none']);
+  ['quick-look', 'scene-viewer', 'webxr', 'none']);
 
 const DEFAULT_AR_MODES = 'webxr scene-viewer quick-look';
 
-const ARMode: {[index: string]: ARMode} = {
+const ARMode: { [index: string]: ARMode } = {
   QUICK_LOOK: 'quick-look',
   SCENE_VIEWER: 'scene-viewer',
   WEBXR: 'webxr',
@@ -57,6 +57,7 @@ const $arMode = Symbol('arMode');
 const $arModes = Symbol('arModes');
 const $arAnchor = Symbol('arAnchor');
 const $preload = Symbol('preload');
+const $originalSrc = Symbol('originalSrc');
 
 const $onARButtonContainerClick = Symbol('onARButtonContainerClick');
 const $onARStatus = Symbol('onARStatus');
@@ -70,7 +71,7 @@ export declare interface ARInterface {
   arModes: string;
   arScale: string;
   arPlacement: string;
-  iosSrc: string|null;
+  iosSrc: string | null;
   xrEnvironment: boolean;
   arUsdzMaxTextureSize: string;
   readonly canActivateAR: boolean;
@@ -78,69 +79,79 @@ export declare interface ARInterface {
 }
 
 export const ARMixin = <T extends Constructor<ModelViewerElementBase>>(
-    ModelViewerElement: T): Constructor<ARInterface>&T => {
+  ModelViewerElement: T): Constructor<ARInterface> & T => {
   class ARModelViewerElement extends ModelViewerElement {
-    @property({type: Boolean, attribute: 'ar'}) ar: boolean = false;
+    @property({ type: Boolean, attribute: 'ar' }) ar: boolean = false;
 
-    @property({type: String, attribute: 'ar-scale'}) arScale: string = 'auto';
+    @property({ type: String, attribute: 'ar-scale' }) arScale: string = 'auto';
 
-    @property({type: String, attribute: 'ar-usdz-max-texture-size'})
+    @property({ type: String, attribute: 'ar-usdz-max-texture-size' })
     arUsdzMaxTextureSize: string = 'auto';
 
-    @property({type: String, attribute: 'ar-placement'})
+    @property({ type: String, attribute: 'ar-placement' })
     arPlacement: string = 'floor';
 
-    @property({type: String, attribute: 'ar-modes'})
+    @property({ type: String, attribute: 'ar-modes' })
     arModes: string = DEFAULT_AR_MODES;
 
-    @property({type: String, attribute: 'ios-src'}) iosSrc: string|null = null;
+    @property({ type: String, attribute: 'ios-src' }) iosSrc: string | null = null;
+    /** Custom source URLs for AR */
+    @property({ type: String, attribute: 'zarbo-android-src' }) _zarboAndroidSrc: string | null = null;
+    @property({ type: String, attribute: 'zarbo-3d-src' }) _zarbo3dSrc: string | null = null;
+    @property({ type: String, attribute: 'zarbo-ios-src' }) _zarboIosSrc: string | null = null;
 
-    @property({type: Boolean, attribute: 'xr-environment'})
+    @property({ type: Boolean, attribute: 'xr-environment' })
     xrEnvironment: boolean = false;
 
     get canActivateAR(): boolean {
       return this[$arMode] !== ARMode.NONE;
     }
 
-    protected[$canActivateAR]: boolean = false;
+    protected [$canActivateAR]: boolean = false;
 
     // TODO: Add this to the shadow root as part of this mixin's
     // implementation:
-    protected[$arButtonContainer]: HTMLElement =
-        this.shadowRoot!.querySelector('.ar-button') as HTMLElement;
+    protected [$arButtonContainer]: HTMLElement =
+      this.shadowRoot!.querySelector('.ar-button') as HTMLElement;
 
-    protected[$arAnchor] = document.createElement('a');
+    protected [$arAnchor] = document.createElement('a');
 
-    protected[$arModes]: Set<ARMode> = new Set();
-    protected[$arMode]: ARMode = ARMode.NONE;
-    protected[$preload] = false;
+    protected [$arModes]: Set<ARMode> = new Set();
+    protected [$arMode]: ARMode = ARMode.NONE;
+    protected [$preload] = false;
+    protected [$originalSrc]: string | null = null;
 
-    private[$onARButtonContainerClick] = (event: Event) => {
+    private [$onARButtonContainerClick] = (event: Event) => {
       event.preventDefault();
       this.activateAR();
     };
 
-    private[$onARStatus] = ({status}: {status: ARStatus}) => {
+    private [$onARStatus] = ({ status }: { status: ARStatus }) => {
       if (status === ARStatus.NOT_PRESENTING ||
-          this[$renderer].arRenderer.presentedScene === this[$scene]) {
+        this[$renderer].arRenderer.presentedScene === this[$scene]) {
         this.setAttribute('ar-status', status);
         this.dispatchEvent(
-            new CustomEvent<ARStatusDetails>('ar-status', {detail: {status}}));
+          new CustomEvent<ARStatusDetails>('ar-status', { detail: { status } }));
         if (status === ARStatus.NOT_PRESENTING) {
           this.removeAttribute('ar-tracking');
+          if (this[$originalSrc] != null) {
+            console.log('Restoring original src:', this[$originalSrc]);
+            this.src = this[$originalSrc];
+            this[$originalSrc] = null;
+          }
         } else if (status === ARStatus.SESSION_STARTED) {
           this.setAttribute('ar-tracking', ARTracking.TRACKING);
         }
       }
     };
 
-    private[$onARTracking] = ({status}: {status: ARTracking}) => {
+    private [$onARTracking] = ({ status }: { status: ARTracking }) => {
       this.setAttribute('ar-tracking', status);
       this.dispatchEvent(new CustomEvent<ARTrackingDetails>(
-          'ar-tracking', {detail: {status}}));
+        'ar-tracking', { detail: { status } }));
     };
 
-    private[$onARTap] = (event: Event) => {
+    private [$onARTap] = (event: Event) => {
       if ((event as any).data == '_apple_ar_quicklook_button_tapped') {
         this.dispatchEvent(new CustomEvent('quick-look-button-tapped'));
       }
@@ -151,11 +162,11 @@ export const ARMixin = <T extends Constructor<ModelViewerElementBase>>(
 
       if (this[$renderer].arRenderer != null) {
         this[$renderer].arRenderer.addEventListener(
-            'status', this[$onARStatus]);
+          'status', this[$onARStatus]);
         this.setAttribute('ar-status', ARStatus.NOT_PRESENTING);
 
         this[$renderer].arRenderer.addEventListener(
-            'tracking', this[$onARTracking]);
+          'tracking', this[$onARTracking]);
       }
 
       this[$arAnchor].addEventListener('message', this[$onARTap]);
@@ -166,9 +177,9 @@ export const ARMixin = <T extends Constructor<ModelViewerElementBase>>(
 
       if (this[$renderer].arRenderer != null) {
         this[$renderer].arRenderer.removeEventListener(
-            'status', this[$onARStatus]);
+          'status', this[$onARStatus]);
         this[$renderer].arRenderer.removeEventListener(
-            'tracking', this[$onARTracking]);
+          'tracking', this[$onARTracking]);
       }
 
       this[$arAnchor].removeEventListener('message', this[$onARTap]);
@@ -191,8 +202,9 @@ export const ARMixin = <T extends Constructor<ModelViewerElementBase>>(
       }
 
       if (changedProperties.has('ar') || changedProperties.has('arModes') ||
-          changedProperties.has('src') || changedProperties.has('iosSrc') ||
-          changedProperties.has('arUsdzMaxTextureSize')) {
+        changedProperties.has('_zarbo3dSrc') || changedProperties.has('_zarboIosSrc') ||
+        changedProperties.has('_zarboAndroidSrc') ||
+        changedProperties.has('arUsdzMaxTextureSize')) {
         this[$selectARMode]();
       }
     }
@@ -204,6 +216,30 @@ export const ARMixin = <T extends Constructor<ModelViewerElementBase>>(
      * require user interaction will most likely be ignored.
      */
     async activateAR() {
+      console.log('activateAR: current mode =', this[$arMode]);
+      console.log('activateAR: current src =', this.src);
+      console.log('activateAR: zarbo-3d-src =', this._zarbo3dSrc);
+      console.log('activateAR: zarbo-android-src =', this._zarboAndroidSrc);
+      console.log('activateAR: IS_SCENEVIEWER_CANDIDATE =', IS_SCENEVIEWER_CANDIDATE);
+
+      if (this[$arMode] === ARMode.WEBXR) {
+        const arSrc = (IS_SCENEVIEWER_CANDIDATE ? this._zarboAndroidSrc : null) ||
+          this._zarbo3dSrc;
+        console.log('activateAR: selected arSrc for WebXR =', arSrc);
+        if (arSrc != null && arSrc !== this.src) {
+          console.log('activateAR: swapping src to', arSrc);
+          if (this[$originalSrc] == null) {
+            this[$originalSrc] = this.src;
+          }
+          this.src = arSrc;
+          await this.updateComplete;
+          console.log('activateAR: updateComplete finished, new src =', this.src, 'loaded =', this.loaded);
+        }
+      }
+
+      await this[$triggerLoad]();
+      console.log('activateAR: triggerLoad finished, scene.url =', this[$scene].url);
+
       switch (this[$arMode]) {
         case ARMode.QUICK_LOOK:
           await this[$openIOSARQuickLook]();
@@ -216,7 +252,7 @@ export const ARMixin = <T extends Constructor<ModelViewerElementBase>>(
           break;
         default:
           console.warn(
-              'No AR Mode can be activated. This is probably due to missing \
+            'No AR Mode can be activated. This is probably due to missing \
 configuration or device capabilities');
           break;
       }
@@ -225,16 +261,20 @@ configuration or device capabilities');
     async[$selectARMode]() {
       let arMode = ARMode.NONE;
       if (this.ar) {
-        if (this.src != null) {
+        const hasArSource = this._zarbo3dSrc != null ||
+          this._zarboAndroidSrc != null || this._zarboIosSrc != null ||
+          this.src != null;
+
+        if (hasArSource) {
           for (const value of this[$arModes]) {
             if (value === 'webxr' && IS_WEBXR_AR_CANDIDATE && !isWebXRBlocked &&
-                await this[$renderer].arRenderer.supportsPresentation()) {
+              await this[$renderer].arRenderer.supportsPresentation()) {
               arMode = ARMode.WEBXR;
               break;
             }
             if (value === 'scene-viewer' && !isSceneViewerBlocked &&
-                (IS_SCENEVIEWER_CANDIDATE ||
-                 ((navigator as any).userAgentData &&
+              (IS_SCENEVIEWER_CANDIDATE ||
+                ((navigator as any).userAgentData &&
                   (navigator as any).userAgentData.getHighEntropyValues &&
                   (await (navigator as any).userAgentData.getHighEntropyValues([
                     'formFactor'
@@ -249,10 +289,11 @@ configuration or device capabilities');
           }
         }
 
-        // The presence of ios-src overrides the absence of quick-look
-        // ar-mode.
-        if (arMode === ARMode.NONE && this.iosSrc != null &&
-            IS_AR_QUICKLOOK_CANDIDATE) {
+        // The presence of ios-src or zarbo-ios-src overrides the absence of
+        // quick-look ar-mode.
+        if (arMode === ARMode.NONE &&
+          (this._zarboIosSrc != null || this.iosSrc != null) &&
+          IS_AR_QUICKLOOK_CANDIDATE) {
           arMode = ARMode.QUICK_LOOK;
         }
       }
@@ -260,19 +301,20 @@ configuration or device capabilities');
       if (arMode !== ARMode.NONE) {
         this[$arButtonContainer].classList.add('enabled');
         this[$arButtonContainer].addEventListener(
-            'click', this[$onARButtonContainerClick]);
+          'click', this[$onARButtonContainerClick]);
       } else if (this[$arButtonContainer].classList.contains('enabled')) {
         this[$arButtonContainer].removeEventListener(
-            'click', this[$onARButtonContainerClick]);
+          'click', this[$onARButtonContainerClick]);
         this[$arButtonContainer].classList.remove('enabled');
 
         // If AR went from working to not, notify the element.
         const status = ARStatus.FAILED;
         this.setAttribute('ar-status', status);
         this.dispatchEvent(
-            new CustomEvent<ARStatusDetails>('ar-status', {detail: {status}}));
+          new CustomEvent<ARStatusDetails>('ar-status', { detail: { status } }));
       }
       this[$arMode] = arMode;
+      console.log('selectARMode: selected mode =', this[$arMode]);
     }
 
     protected async[$enterARWithWebXR]() {
@@ -282,8 +324,8 @@ configuration or device capabilities');
 
       try {
         this[$arButtonContainer].removeEventListener(
-            'click', this[$onARButtonContainerClick]);
-        const {arRenderer} = this[$renderer];
+          'click', this[$onARButtonContainerClick]);
+        const { arRenderer } = this[$renderer];
         arRenderer.placeOnWall = this.arPlacement === 'wall';
         await arRenderer.present(this[$scene], this.xrEnvironment);
       } catch (error) {
@@ -300,11 +342,16 @@ configuration or device capabilities');
     }
 
     async[$triggerLoad]() {
-      if (!this.loaded) {
+      console.log('triggerLoad: loaded =', this.loaded, 'src =', this.src, 'scene.url =', this[$scene].url);
+      if (!this.loaded || (this.src != null && this.src !== this[$scene].url)) {
+        console.log('triggerLoad: starting updateSource...');
         this[$preload] = true;
         this[$updateSource]();
         await waitForEvent(this, 'load');
+        console.log('triggerLoad: load event received');
         this[$preload] = false;
+      } else {
+        console.log('triggerLoad: skipping load');
       }
     }
 
@@ -319,7 +366,8 @@ configuration or device capabilities');
     [$openSceneViewer]() {
       const location = self.location.toString();
       const locationUrl = new URL(location);
-      const modelUrl = new URL(this.src!, location);
+      const modelUrl = new URL(
+        this._zarboAndroidSrc || this._zarbo3dSrc || this.src!, location);
       if (modelUrl.hash)
         modelUrl.hash = '';
       const params = new URLSearchParams(modelUrl.search);
@@ -346,12 +394,10 @@ configuration or device capabilities');
         params.set('link', linkUrl.toString());
       }
 
-      const intent = `intent://arvr.google.com/scene-viewer/1.2?${
-          params.toString() + '&file=' +
-          encodeURIComponent(
-              modelUrl
-                  .toString())}#Intent;scheme=https;package=com.google.android.googlequicksearchbox;action=android.intent.action.VIEW;S.browser_fallback_url=${
-          encodeURIComponent(locationUrl.toString())};end;`;
+      const intent = `intent://arvr.google.com/scene-viewer/1.2?${params.toString() + '&file=' +
+        encodeURIComponent(
+          modelUrl
+            .toString())}#Intent;scheme=https;package=com.google.android.googlequicksearchbox;action=android.intent.action.VIEW;S.browser_fallback_url=${encodeURIComponent(locationUrl.toString())};end;`;
 
       const undoHashChange = () => {
         if (self.location.hash === noArViewerSigil) {
@@ -370,7 +416,7 @@ configuration or device capabilities');
         }
       };
 
-      self.addEventListener('hashchange', undoHashChange, {once: true});
+      self.addEventListener('hashchange', undoHashChange, { once: true });
 
       this[$arAnchor].setAttribute('href', intent);
       console.log('Attempting to present in AR with Scene Viewer...');
@@ -382,17 +428,19 @@ configuration or device capabilities');
      * Safari iOS can intent to their AR Quick Look.
      */
     async[$openIOSARQuickLook]() {
-      const generateUsdz = !this.iosSrc;
+      const generateUsdz = !this._zarboIosSrc;
 
       this[$arButtonContainer].classList.remove('enabled');
 
-      const objectURL = generateUsdz ? await this.prepareUSDZ() : this.iosSrc!;
+      const objectURL = generateUsdz ? await this.prepareUSDZ() : this._zarboIosSrc!;
       const modelUrl = new URL(objectURL, self.location.toString());
 
       if (generateUsdz) {
         const location = self.location.toString();
         const locationUrl = new URL(location);
-        const srcUrl = new URL(this.src!, locationUrl);
+        const srcUrl = new URL(
+          this._zarboAndroidSrc || this._zarbo3dSrc || this.src!,
+          locationUrl);
         if (srcUrl.hash) {
           modelUrl.hash = srcUrl.hash;
         }
@@ -431,11 +479,11 @@ configuration or device capabilities');
 
     async prepareUSDZ(): Promise<string> {
       const updateSourceProgress =
-          this[$progressTracker].beginActivity('usdz-conversion');
+        this[$progressTracker].beginActivity('usdz-conversion');
 
       await this[$triggerLoad]();
 
-      const {model, shadow, target} = this[$scene];
+      const { model, shadow, target } = this[$scene];
       if (model == null) {
         return '';
       }
@@ -458,8 +506,8 @@ configuration or device capabilities');
 
       const arraybuffer = await exporter.parseAsync(model, {
         maxTextureSize: isNaN(this.arUsdzMaxTextureSize as any) ?
-            Infinity :
-            Math.max(parseInt(this.arUsdzMaxTextureSize), 16),
+          Infinity :
+          Math.max(parseInt(this.arUsdzMaxTextureSize), 16),
       });
 
       model.position.set(0, 0, 0);
