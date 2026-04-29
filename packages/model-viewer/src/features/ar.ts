@@ -135,7 +135,6 @@ export const ARMixin = <T extends Constructor<ModelViewerElementBase>>(
         if (status === ARStatus.NOT_PRESENTING) {
           this.removeAttribute('ar-tracking');
           if (this[$originalSrc] != null) {
-            console.log('Restoring original src:', this[$originalSrc]);
             this.src = this[$originalSrc];
             this[$originalSrc] = null;
           }
@@ -216,29 +215,19 @@ export const ARMixin = <T extends Constructor<ModelViewerElementBase>>(
      * require user interaction will most likely be ignored.
      */
     async activateAR() {
-      console.log('activateAR: current mode =', this[$arMode]);
-      console.log('activateAR: current src =', this.src);
-      console.log('activateAR: zarbo-3d-src =', this._zarbo3dSrc);
-      console.log('activateAR: zarbo-android-src =', this._zarboAndroidSrc);
-      console.log('activateAR: IS_SCENEVIEWER_CANDIDATE =', IS_SCENEVIEWER_CANDIDATE);
-
       if (this[$arMode] === ARMode.WEBXR) {
         const arSrc = (IS_SCENEVIEWER_CANDIDATE ? this._zarboAndroidSrc : null) ||
           this._zarbo3dSrc;
-        console.log('activateAR: selected arSrc for WebXR =', arSrc);
         if (arSrc != null && arSrc !== this.src) {
-          console.log('activateAR: swapping src to', arSrc);
           if (this[$originalSrc] == null) {
             this[$originalSrc] = this.src;
           }
           this.src = arSrc;
           await this.updateComplete;
-          console.log('activateAR: updateComplete finished, new src =', this.src, 'loaded =', this.loaded);
         }
       }
 
       await this[$triggerLoad]();
-      console.log('activateAR: triggerLoad finished, scene.url =', this[$scene].url);
 
       switch (this[$arMode]) {
         case ARMode.QUICK_LOOK:
@@ -314,11 +303,9 @@ configuration or device capabilities');
           new CustomEvent<ARStatusDetails>('ar-status', { detail: { status } }));
       }
       this[$arMode] = arMode;
-      console.log('selectARMode: selected mode =', this[$arMode]);
     }
 
     protected async[$enterARWithWebXR]() {
-      console.log('Attempting to present in AR with WebXR...');
 
       await this[$triggerLoad]();
 
@@ -342,16 +329,13 @@ configuration or device capabilities');
     }
 
     async[$triggerLoad]() {
-      console.log('triggerLoad: loaded =', this.loaded, 'src =', this.src, 'scene.url =', this[$scene].url);
       if (!this.loaded || (this.src != null && this.src !== this[$scene].url)) {
-        console.log('triggerLoad: starting updateSource...');
         this[$preload] = true;
         this[$updateSource]();
         await waitForEvent(this, 'load');
-        console.log('triggerLoad: load event received');
         this[$preload] = false;
       } else {
-        console.log('triggerLoad: skipping load');
+        console.warn('triggerLoad: skipping load');
       }
     }
 
@@ -428,8 +412,7 @@ configuration or device capabilities');
      * Safari iOS can intent to their AR Quick Look.
      */
     async[$openIOSARQuickLook]() {
-      const generateUsdz = !this._zarboIosSrc;
-
+      const generateUsdz = !this._zarboIosSrc || this._zarboIosSrc?.indexOf(".glb") !== -1 || this._zarboIosSrc?.indexOf(".gltf") !== -1;
       this[$arButtonContainer].classList.remove('enabled');
 
       const objectURL = generateUsdz ? await this.prepareUSDZ() : this._zarboIosSrc!;

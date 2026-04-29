@@ -66,6 +66,7 @@ export const IS_SAFARI = /Safari\//.test(navigator.userAgent);
 export const IS_FIREFOX = /firefox/i.test(navigator.userAgent);
 export const IS_OCULUS = /OculusBrowser/.test(navigator.userAgent);
 export const IS_IOS_CHROME = IS_IOS && /CriOS\//.test(navigator.userAgent);
+export const IS_IOS_YANDEX = IS_IOS && /YaBrowser\//.test(navigator.userAgent);
 export const IS_IOS_SAFARI = IS_IOS && IS_SAFARI;
 
 export const IS_SCENEVIEWER_CANDIDATE = IS_ANDROID && !IS_FIREFOX && !IS_OCULUS;
@@ -94,7 +95,7 @@ export const IS_AR_QUICKLOOK_CANDIDATE = (() => {
           tempAnchor.relList && tempAnchor.relList.supports &&
           tempAnchor.relList.supports('ar'));
     } else {
-      return Boolean(/CriOS\/|EdgiOS\/|FxiOS\/|GSA\/|DuckDuckGo\//.test(
+      return Boolean(/CriOS\/|EdgiOS\/|FxiOS\/|GSA\/|DuckDuckGo\/|YaBrowser\//.test(
           navigator.userAgent));
     }
   } else {
